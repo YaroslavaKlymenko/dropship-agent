@@ -1,9 +1,21 @@
 # Project Context
 
 ## What we're building
-Email automation agent for dropshipping business.
-Reads partner emails from Gmail → classifies intent via LLM 
-→ executes action (reserve/stock check/price) → drafts reply.
+Email automation agent for My-Art (my-art.com.ua) — Ukrainian handcraft 
+store (diamond embroidery, cross-stitch, paint-by-numbers, frames).
+
+The store has dropshipping partners across Ukraine and Poland who send 
+emails asking about stock availability, reservations, prices, and order 
+status. The agent reads these emails, classifies intent, and automates 
+responses or notifies the store owner.
+
+## Business context
+- Primary language: Ukrainian
+- Secondary: Polish (some partners), Russian (legacy, but rare)
+- Partners are dropshippers — they resell My-Art products
+- Key product types: diamond mosaic sets, cross-stitch kits, frames
+- SKU format: TN1283, AR-3221, TNG1619, IND-ZAKAZ, 2933-4030
+- Special case: "individual_order" intent for custom photo-based items
 
 ## Tech stack
 - Python 3.13
