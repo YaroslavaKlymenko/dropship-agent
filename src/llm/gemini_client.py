@@ -51,3 +51,24 @@ class GeminiLLMClient(LLMClient):
         except Exception as e:
             print(f"[GeminiLLMClient] Error: {e}")
             return _FALLBACK.copy()
+
+    def generate_text(self, system_prompt: str, user_message: str) -> str:
+        """Generate free-form text using Google Gemini.
+
+        Args:
+            system_prompt: Instructions / role description for the model.
+            user_message: The actual task or context.
+
+        Returns:
+            Generated text string, or empty string on failure.
+        """
+        try:
+            response = self._client.models.generate_content(
+                model=_MODEL,
+                contents=f"{system_prompt}\n\n{user_message}",
+                config=self._types.GenerateContentConfig(temperature=0.4),
+            )
+            return response.text or ""
+        except Exception as e:
+            print(f"[GeminiLLMClient.generate_text] Error: {e}")
+            return ""

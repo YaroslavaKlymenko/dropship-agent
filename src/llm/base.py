@@ -47,3 +47,15 @@ class LLMClient(ABC):
                 language (str): ISO language code, e.g. "en", "uk", "pl"
                 confidence (float): 0.0–1.0
         """
+
+    @abstractmethod
+    def generate_text(self, system_prompt: str, user_message: str) -> str:
+        """Generate free-form text from the LLM.
+
+        Args:
+            system_prompt: Instructions / role description for the model.
+            user_message: The actual task or context.
+
+        Returns:
+            Generated text string.
+        """

@@ -49,3 +49,27 @@ class GroqLLMClient(LLMClient):
         except Exception as e:
             print(f"[GroqLLMClient] Error: {e}")
             return _FALLBACK.copy()
+
+    def generate_text(self, system_prompt: str, user_message: str) -> str:
+        """Generate free-form text using Groq's Llama model.
+
+        Args:
+            system_prompt: Instructions / role description for the model.
+            user_message: The actual task or context.
+
+        Returns:
+            Generated text string, or empty string on failure.
+        """
+        try:
+            response = self._client.chat.completions.create(
+                model=_MODEL,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_message},
+                ],
+                temperature=0.4,
+            )
+            return response.choices[0].message.content or ""
+        except Exception as e:
+            print(f"[GroqLLMClient.generate_text] Error: {e}")
+            return ""

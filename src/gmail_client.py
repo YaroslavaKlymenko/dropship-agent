@@ -138,34 +138,99 @@ def create_draft(
     subject: str,
     body: str,
     thread_id: str | None = None,
+    original_message_id: str | None = None,
 ) -> dict:
     """Create a Gmail draft (does not send).
+
+    When thread_id is provided the draft is attached as a proper reply:
+    the MIME message carries In-Reply-To / References headers (fetched from
+    the original message) so Gmail shows it inside the existing thread.
 
     Args:
         service: Authenticated Gmail service object.
         to: Recipient email address.
-        subject: Email subject.
+        subject: Email subject (a 'Re: ' prefix is added automatically if
+            the message is a reply and the subject doesn't already have one).
         body: Plain-text email body.
-        thread_id: If provided, attaches the draft as a reply in that thread.
+        thread_id: Gmail thread ID. Attaches the draft to that thread.
+        original_message_id: Gmail internal message ID of the email being
+            replied to. Used to fetch the RFC 2822 Message-ID header so
+            Gmail can set In-Reply-To / References correctly.
 
     Returns:
         Created draft object returned by the Gmail API.
     """
+    # Normalise subject for replies — never produce "Re: Re: …"
+    if thread_id and not subject.startswith("Re: "):
+        subject = f"Re: {subject}"
+
     mime_message = MIMEText(body, "plain", "utf-8")
     mime_message["to"] = to
     mime_message["subject"] = subject
+
+    if original_message_id:
+        rfc_msg_id = _get_rfc_message_id(service, original_message_id)
+        if rfc_msg_id:
+            mime_message["In-Reply-To"] = rfc_msg_id
+            mime_message["References"] = rfc_msg_id
 
     raw = base64.urlsafe_b64encode(mime_message.as_bytes()).decode()
     draft_body: dict = {"message": {"raw": raw}}
     if thread_id:
         draft_body["message"]["threadId"] = thread_id
 
-    return service.users().drafts().create(userId="me", body=draft_body).execute()
+    try:
+        return service.users().drafts().create(userId="me", body=draft_body).execute()
+    except Exception as e:
+        if thread_id and ("invalid" in str(e).lower() or "thread" in str(e).lower()):
+            print(
+                f"[gmail_client.create_draft] Warning: thread_id {thread_id!r} not found "
+                f"in Gmail ({e}). Retrying as standalone draft."
+            )
+            draft_body["message"].pop("threadId", None)
+            return service.users().drafts().create(userId="me", body=draft_body).execute()
+        raise
 
 
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
+def _get_rfc_message_id(service, gmail_msg_id: str) -> str | None:
+    """Return the RFC 2822 Message-ID header value for a Gmail message.
+
+    Args:
+        service: Authenticated Gmail service object.
+        gmail_msg_id: Gmail internal message ID (e.g. '18f2abc3d4e5f6').
+
+    Returns:
+        The Message-ID string (e.g. '<CABc123@mail.gmail.com>'),
+        or None if not found or on any API error.
+    """
+    try:
+        msg = (
+            service.users()
+            .messages()
+            .get(
+                userId="me",
+                id=gmail_msg_id,
+                format="metadata",
+                metadataHeaders=["Message-ID"],
+            )
+            .execute()
+        )
+        headers = {
+            h["name"].lower(): h["value"]
+            for h in msg.get("payload", {}).get("headers", [])
+        }
+        return headers.get("message-id")
+    except Exception as e:
+        print(
+            f"[gmail_client] Warning: could not fetch Message-ID for "
+            f"{gmail_msg_id!r}: {e}"
+        )
+        return None
+
 
 def _extract_email_address(value: str) -> str:
     """Strip display name from an email header value.
