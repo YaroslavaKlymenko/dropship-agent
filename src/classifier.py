@@ -4,6 +4,7 @@ import json
 
 from src import db
 from src import gmail_client as gmail
+from src import sheets_client
 from src.llm.base import LLMClient
 
 _RESPONSE_SYSTEM_PROMPT = """\
@@ -209,6 +210,17 @@ def handle_reserve(email_record: dict, classification: dict, llm: LLMClient) -> 
                 shortage_items.append({"sku": sku, "reason": "product not found"})
                 continue
 
+            # 1. Спочатку перевіряємо Google Sheet
+            sheet_result = sheets_client.process_reservation_in_sheet(sku)
+            if not sheet_result["success"] and sheet_result.get("reason") == "немає":
+                shortage_items.append({
+                    "sku": sku,
+                    "name": product.get("name", sku),
+                    "reason": "недоступний — немає в наявності",
+                })
+                continue  # не резервуємо в Supabase
+
+            # 2. Перевіряємо Supabase stock
             available = db.check_stock(sku)
             if available >= requested_qty:
                 reservation = db.create_reservation(
