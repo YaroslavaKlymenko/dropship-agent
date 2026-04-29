@@ -15,7 +15,7 @@ import sys
 import time
 from datetime import datetime
 
-from src import classifier, db, gmail_client
+from src import classifier, gmail_client
 
 
 # ---------------------------------------------------------------------------
@@ -99,15 +99,18 @@ def run_pipeline(
                 stats["new"] += 1
                 continue
 
+# ------------------------------------------------------------------
+            # Build email_record directly (no DB)
             # ------------------------------------------------------------------
-            # Save to DB (skips duplicates)
-            # ------------------------------------------------------------------
-            email_record = db.save_email(details)
-
-            if email_record is None:
-                stats["duplicates"] += 1
-                print(f"          Skipped (already processed): {subject}\n")
-                continue
+            email_record = {
+                "id": msg_stub["id"],
+                "gmail_message_id": details.get("gmail_message_id", msg_stub["id"]),
+                "gmail_thread_id": details.get("gmail_thread_id", ""),
+                "from_email": details.get("from_email", ""),
+                "subject": details.get("subject", ""),
+                "body_text": details.get("body_text", ""),
+                "received_at": details.get("received_at", ""),
+            }
 
             stats["new"] += 1
 

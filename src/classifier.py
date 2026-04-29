@@ -178,16 +178,6 @@ def handle_stock_inquiry(email_record: dict, classification: dict, llm: LLMClien
 
 
 def handle_reserve(email_record: dict, classification: dict, llm: LLMClient) -> dict:
-    """Handle reserve intent: create reservations and draft a confirmation.
-
-    Args:
-        email_record: Saved email row from the DB.
-        classification: LLM classification result dict.
-        llm: LLM client instance.
-
-    Returns:
-        Result dict. needs_human_review is always True for reservations.
-    """
     result: dict = {
         "email_id": email_record["id"],
         "intent": "reserve",
@@ -202,59 +192,35 @@ def handle_reserve(email_record: dict, classification: dict, llm: LLMClient) -> 
         requested_qty = classification.get("quantity") or 1
         reserved_items = []
         shortage_items = []
-        first_reservation_id: int | None = None
 
         for sku in skus:
-            product = db.get_product_by_sku(sku)
-            if not product:
-                shortage_items.append({"sku": sku, "reason": "product not found"})
-                continue
-
-            # 1. Спочатку перевіряємо Google Sheet
             sheet_result = sheets_client.process_reservation_in_sheet(sku)
-            if not sheet_result["success"] and sheet_result.get("reason") == "немає":
-                shortage_items.append({
-                    "sku": sku,
-                    "name": product.get("name", sku),
-                    "reason": "недоступний — немає в наявності",
-                })
-                continue  # не резервуємо в Supabase
 
-            # 2. Перевіряємо Supabase stock
-            available = db.check_stock(sku)
-            if available >= requested_qty:
-                reservation = db.create_reservation(
-                    product_id=product["id"],
-                    partner_email=email_record["from_email"],
-                    quantity=requested_qty,
-                    email_id=email_record["id"],
-                )
-                if reservation:
-                    if first_reservation_id is None:
-                        first_reservation_id = reservation["id"]
-                    reserved_items.append({
+            if not sheet_result["success"]:
+                reason = sheet_result.get("reason", "")
+                if reason == "немає":
+                    shortage_items.append({
                         "sku": sku,
-                        "name": product["name"],
-                        "quantity": requested_qty,
+                        "reason": "немає в наявності",
                     })
                 else:
-                    shortage_items.append({"sku": sku, "reason": "reservation failed"})
+                    # SKU не знайдено в таблиці взагалі
+                    shortage_items.append({
+                        "sku": sku,
+                        "reason": f"артикул не знайдено в таблиці",
+                    })
             else:
-                shortage_items.append({
+                reserved_items.append({
                     "sku": sku,
-                    "name": product.get("name", sku),
-                    "requested": requested_qty,
-                    "available": available,
+                    "quantity": requested_qty,
+                    "action": sheet_result.get("action"),
                 })
-
-        result["reservation_id"] = first_reservation_id
 
         body = generate_response_text(
             "Напиши природну відповідь-підтвердження резервування. "
             "Звернись до відправника на ім'я (якщо є в email_body). "
-            "Для кожного зарезервованого товару — підтверди природним реченням (назву та кількість). "
-            "Якщо є shortage — поясни, чого не вистачає і запропонуй уточнити. "
-            "Зазнач, що резервування очікує підтвердження протягом 48 годин. "
+            "Для кожного зарезервованого товару — підтверди природним реченням (артикул та кількість). "
+            "Якщо є shortage — поясни що товар недоступний або артикул не знайдено. "
             "Не використовуй списки.",
             {
                 "reserved": reserved_items,
@@ -275,7 +241,7 @@ def handle_reserve(email_record: dict, classification: dict, llm: LLMClient) -> 
         )
         result["draft_id"] = draft.get("id")
         result["action_taken"] = (
-            f"Reserved {reserved_items}; shortages {shortage_items}. Draft created."
+            f"Sheet-only reserve: reserved={reserved_items}, shortages={shortage_items}"
         )
     except Exception as e:
         result["error"] = str(e)
